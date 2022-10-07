@@ -11,6 +11,7 @@ from pathlib import Path
 from configparser import ConfigParser, ExtendedInterpolation
 
 import mlflow
+from mlflow import MlflowClient
 import pandas as pd
 import statsmodels.api as sm
 from stargazer.stargazer import Stargazer
@@ -82,8 +83,8 @@ class ProjectRunner:
         self.ntl_cols = json_data["ntl_cols"]
         self.geom_id = json_data["primary_geom_id"]
 
-        # set MLflow tracking location
-        mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
+        self.tracking_uri = config["mlflow"]["tracking_uri"]
+        self.registry_uri = config["mlflow"]["registry_uri"]
 
         sys.path.insert(0, os.path.join(self.project_dir, "src"))
 
@@ -120,53 +121,68 @@ class ProjectRunner:
             show=self.show_plots,
         )
 
+        client = MlflowClient(
+            tracking_uri=self.tracking_uri,
+            registry_uri=self.registry_uri,
+        )
+
         # search for this experiment id
         experiment_id = next(
             filter(
                 lambda x: x.name == "accessible-poverty-estimates",
-                mlflow.search_experiments(),
+                client.search_experiments(),
             ),
             None,
         ).experiment_id
+
+        this_run_tags = {
+            "mlflow.runName": f"{self.project} - {name}",
+            "model_name": name,
+        }
+
         # create this run
-        with mlflow.start_run(
+        run = client.create_run(
             experiment_id=experiment_id,
-            run_name=f"{self.project} - {name}",
-            tags=self.tags,
-        ) as run:
-            # add model name to this run's tags
-            mlflow.set_tag("model_name", name)
+            tags=self.tags.update(this_run_tags),
+        )
 
-            cv = model_utils.evaluate_model(
-                data=self.data_df,
-                feature_cols=cols,
-                indicator_cols=self.indicators,
-                clust_str=self.geom_id,
-                model_name=name,
-                scoring=self.scoring,
-                model_type="random_forest",
-                refit="r2",
-                search_type=self.search_type,
-                n_splits=self.n_splits,
-                n_iter=10,
-                plot_importance=True,
-                verbose=1,
-                output_file=os.path.join(
-                    self.results_dir, f"{name}_model_cv{self.n_splits}_"
-                ),
-                show=self.show_plots,
-            )
+        run_id = run.info.run_id
 
-            plot_file_path = os.path.join(
-                self.results_dir, f"{name}_model_grid_search_parallel_coordinates"
-            )
-            data_utils.plot_parallel_coordinates(
-                output_file=plot_file_path,
-                output_name=self.output_name,
-                cv_results=cv.cv_results_,
-            )
+        # add model name to this run's tags
+        # mlflow.set_tag("model_name", name)
 
-            mlflow.log_artifact(plot_file_path + ".html")
+        cv = model_utils.evaluate_model(
+            data=self.data_df,
+            feature_cols=cols,
+            indicator_cols=self.indicators,
+            clust_str=self.geom_id,
+            model_name=name,
+            mlflow_client=client,
+            run_id=run_id,
+            scoring=self.scoring,
+            model_type="random_forest",
+            refit="r2",
+            search_type=self.search_type,
+            n_splits=self.n_splits,
+            n_iter=10,
+            plot_importance=True,
+            verbose=1,
+            output_file=os.path.join(
+                self.results_dir, f"{name}_model_cv{self.n_splits}_"
+            ),
+            show=self.show_plots,
+        )
+
+        plot_file_path = os.path.join(
+            self.results_dir, f"{name}_model_grid_search_parallel_coordinates"
+        )
+        data_utils.plot_parallel_coordinates(
+            output_file=plot_file_path,
+            output_name=self.output_name,
+            cv_results=cv.cv_results_,
+        )
+
+        client.log_artifact(run_id, plot_file_path + ".html")
 
         model_utils.save_model(
             cv,

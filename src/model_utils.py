@@ -17,7 +17,10 @@ from joblib import dump, load
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
+
 import mlflow
+from mlflow import MlflowClient
+from mlflow.models import Model
 
 from sklearn.model_selection import (
     GridSearchCV,
@@ -67,6 +70,8 @@ def evaluate_model(
     feature_cols,
     indicator_cols,
     clust_str,
+    mlflow_client: MlflowClient,
+    run_id,
     model_name=None,
     wandb=None,
     model_type="ridge",
@@ -210,15 +215,25 @@ def evaluate_model(
 
         # Log each feature's importance as a MLflow metric
         for z in range(len(X.columns)):
-            mlflow.log_metric(f"{X.columns[z]}_importance",
+            mlflow_client.log_metric(run_id, f"{X.columns[z]}_importance",
                               cv.best_estimator_.named_steps["regressor"].feature_importances_[z])
 
-        if mlflow.active_run() is not None:
-            mlflow.sklearn.log_model(cv.best_estimator_,
-                                     "best model",
-                                     registered_model_name=model_name)
-            for k in cv.best_params_.keys():
-                mlflow.log_param(k, cv.best_score_)
+        Model(run_id=run_id).log(
+            artifact_path="mlruns",
+            flavor=mlflow.sklearn,
+            sk_model=cv.best_estimator_,
+            conda_env=None,
+            code_paths=None,
+            serialization_format="cloudpickle",
+            registered_model_name=model_name,
+            signature=None,
+            input_example=None,
+            pip_requirements=None,
+            extra_pip_requirements=None,
+            pyfunc_predict_fn="predict",
+        )
+        for k in cv.best_params_.keys():
+            mlflow_client.log_param(run_id, k, cv.best_score_)
 
         print(
             "Best estimator: {}".format(cv.best_estimator_)
