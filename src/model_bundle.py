@@ -20,9 +20,6 @@ cluster_kwargs = {
     "processes": 12,
     "memory": "30GB",
     "interface": "ib0",
-    "job_script_prologue": [
-        "cd /sciclone/home20/jwhall/accessible-poverty-estimates/src"
-    ],
     # "job_extra_directives": ["-j oe"],
 }
 
@@ -53,6 +50,9 @@ def run_model(model_func, config):
 if __name__ == "__main__":
     config = ConfigParser(interpolation=ExtendedInterpolation())
     config.read("config.ini")
+
+    # add a command to job script prologue that changes directory to project_dir/src
+    cluster_kwargs["job_script_prologue"] = ["cd " + os.path.abspath(os.path.join(config["main"]["project_dir"], "src"))]
 
     model_funcs =  parse_list(config["main"]["model_funcs"])
 
