@@ -84,7 +84,9 @@ class ProjectRunner:
         self.geom_id = json_data["primary_geom_id"]
 
         self.tracking_uri = config["mlflow"]["tracking_uri"]
+        mlflow.set_tracking_uri(self.tracking_uri)
         self.registry_uri = config["mlflow"]["registry_uri"]
+        self.artifact_path = config["mlflow"]["artifact_location"]
 
         sys.path.insert(0, os.path.join(self.project_dir, "src"))
 
@@ -158,7 +160,8 @@ class ProjectRunner:
             clust_str=self.geom_id,
             model_name=name,
             mlflow_client=client,
-            run_id=run_id,
+            mlflow_run_id=run_id,
+            mlflow_artifact_path=self.artifact_path,
             scoring=self.scoring,
             model_type="random_forest",
             refit="r2",

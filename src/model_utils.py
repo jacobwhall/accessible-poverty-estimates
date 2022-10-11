@@ -21,6 +21,7 @@ import xgboost as xgb
 import mlflow
 from mlflow import MlflowClient
 from mlflow.models import Model
+from mlflow.utils.file_utils import TempDir
 
 from sklearn.model_selection import (
     GridSearchCV,
@@ -71,7 +72,8 @@ def evaluate_model(
     indicator_cols,
     clust_str,
     mlflow_client: MlflowClient,
-    run_id,
+    mlflow_run_id,
+    mlflow_artifact_path,
     model_name=None,
     wandb=None,
     model_type="ridge",
@@ -215,25 +217,24 @@ def evaluate_model(
 
         # Log each feature's importance as a MLflow metric
         for z in range(len(X.columns)):
-            mlflow_client.log_metric(run_id, f"{X.columns[z]}_importance",
+            mlflow_client.log_metric(mlflow_run_id, f"{X.columns[z]}_importance",
                               cv.best_estimator_.named_steps["regressor"].feature_importances_[z])
 
-        Model(run_id=run_id).log(
-            artifact_path="mlruns",
-            flavor=mlflow.sklearn,
-            sk_model=cv.best_estimator_,
-            conda_env=None,
-            code_paths=None,
-            serialization_format="cloudpickle",
-            registered_model_name=model_name,
-            signature=None,
-            input_example=None,
-            pip_requirements=None,
-            extra_pip_requirements=None,
-            pyfunc_predict_fn="predict",
-        )
+        with TempDir() as tmp:
+            local_path = tmp.path("model")
+            mlflow_model = Model(run_id=mlflow_run_id)
+            mlflow.sklearn.save_model(sk_model=cv.best_estimator_, path=local_path, mlflow_model=mlflow_model)
+            mlflow_client.log_artifacts(mlflow_run_id, local_path)
+            mlflow_client._record_logged_model(mlflow_run_id, mlflow_model)
+            if model_name is not None:
+                mlflow.register_model(
+                    "runs:/%s/%s" % (mlflow_run_id, mlflow_model.artifact_path),
+                    model_name,
+                )
+
         for k in cv.best_params_.keys():
-            mlflow_client.log_param(run_id, k, cv.best_score_)
+            mlflow_client.log_param(mlflow_run_id, k, cv.best_score_)
+
 
         print(
             "Best estimator: {}".format(cv.best_estimator_)
