@@ -338,10 +338,12 @@ def plot_corr(
         [x[1] for x in values[n - max_n :]],
     )
     plt.grid()
+    """
     if output_file:
         plt.savefig(fname=output_file, bbox_inches="tight")
     if show:
         plt.show(block=False)
+    """
 
 
 
