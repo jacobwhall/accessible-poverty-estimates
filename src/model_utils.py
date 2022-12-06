@@ -518,11 +518,11 @@ def nested_cross_validation(
                             tags= {
                                 MLFLOW_PARENT_RUN_ID: mlflow_run_id,
                             }
-                        )
+                        ).info.run_id
         pipeline_model = Model(run_id=nested_run_id)
         mlflow.sklearn.save_model(sk_model=pipe, path=local_path, mlflow_model=pipeline_model)
 
-        mlflow_client.log_artifacts(nested__run_id, local_path)
+        mlflow_client.log_artifacts(nested_run_id, local_path)
         mlflow_client._record_logged_model(nested_run_id, pipeline_model)
         # if model_name is not None:
         #     mlflow.register_model(
