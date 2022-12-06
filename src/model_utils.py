@@ -22,6 +22,7 @@ import mlflow
 from mlflow import MlflowClient
 from mlflow.models import Model
 from mlflow.utils.file_utils import TempDir
+from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 
 from sklearn.model_selection import (
     GridSearchCV,
@@ -174,6 +175,9 @@ def evaluate_model(
             polynomial=polynomial,
             poly_degree=poly_degree,
             n_workers=n_workers,
+            mlflow_client=mlflow_client,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_artifact_path=mlflow_artifact_path,
             verbose=verbose,
         )
         # print("RESULTS 1B: ", cv.cv_results_)
@@ -414,6 +418,9 @@ def nested_cross_validation(
     param_grid,
     scoring,
     refit,
+    mlflow_client,
+    mlflow_run_id,
+    mlflow_artifact_path,
     search_type="random",
     n_splits=5,
     n_iter=50,
@@ -502,6 +509,26 @@ def nested_cross_validation(
     if task_type == "regression":
         pipeline.append(("regressor", model))
     pipe = Pipeline(pipeline)
+
+    with TempDir() as tmp:
+        local_path = tmp.path("model")
+
+        nested_run_id = mlflow_client.create_run(
+                            experiment_id=mlflow.get_run(mlflow_run_id).info.experiment_id,
+                            tags= {
+                                MLFLOW_PARENT_RUN_ID: mlflow_run_id,
+                            }
+                        )
+        pipeline_model = Model(run_id=nested_run_id)
+        mlflow.sklearn.save_model(sk_model=pipe, path=local_path, mlflow_model=pipeline_model)
+
+        mlflow_client.log_artifacts(nested__run_id, local_path)
+        mlflow_client._record_logged_model(nested_run_id, pipeline_model)
+        # if model_name is not None:
+        #     mlflow.register_model(
+        #         "runs:/%s/%s" % (nested_run_id, pipeline_model.artifact_path),
+        #         model_name,
+        #     )
 
     # Define search type: grid or random
     if search_type == "grid":
